@@ -1,1 +1,4 @@
 .direnv/**
+.Build/**
+Music/**
+app
