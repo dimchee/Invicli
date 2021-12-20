@@ -1,7 +1,9 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, OverloadedStrings, TupleSections #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+
 module Main where
 
-
+import Relude
 import Network.HTTP.Client (parseRequest, Request)
 import Network.HTTP.Types
 import Network.HTTP.Simple hiding (Proxy(..))
@@ -15,8 +17,9 @@ import Data.Data (Proxy(..))
 import Control.Monad.Trans.Maybe
 import Control.Monad.Trans.Except
 import Control.Monad.Cont
+import Data.Foldable
 
-data InvidError = NoServiceAvailableError | BadJsonParsingError JSONException
+data InvidError = NoServiceAvailableError | BadJsonParsingError JSONException | NoVideosError
     deriving (Show)
 
 type Url = String
@@ -32,6 +35,9 @@ instance Monad m => Semigroup (ExceptT e m a) where
                 case z of
                     Right x -> return $ Right x
                     Left  y -> return $ Left y
+
+foldSemi :: Semigroup a => NonEmpty a -> a
+foldSemi (x :| xs) = foldl (<>) x xs
 
 callApi :: FromJSON b => Request -> IO (Either InvidError b)
 callApi r = do
@@ -81,19 +87,24 @@ downloadVideo path url = do
     runConduitRes $ httpSource req getResponseBody .| sinkFile path
 
 tryInsts :: VidId -> [Instance] -> ExceptT InvidError IO (Instance, Video)
-tryInsts _ [] = undefined
-tryInsts vidId [inst] = (inst,) <$> getVideo inst vidId
-tryInsts vidId (inst:rest) = tryInsts vidId [inst] <> tryInsts vidId rest
+tryInsts vidId insts = case viaNonEmpty foldSemi $ map (\inst -> (inst,) <$> getVideo inst vidId) $ insts of
+    Nothing -> ExceptT $ return $ Left NoVideosError
+    Just x -> x
+-- tryInsts _ [] = undefined
+-- tryInsts vidId [inst] = (inst,) <$> getVideo inst vidId
+-- tryInsts vidId (inst:rest) = tryInsts vidId [inst] <> tryInsts vidId rest
 
 main :: IO ()
 main = do
     runExceptT $ do
         insts <- getInstances
         (inst, x) <- tryInsts "bKxccejvdtU" insts
-        lift $ print $ type_ . last . formatStreams $ x
-        lift $ print $ encoding . last . formatStreams $ x
-        lift $ print $ url . last . formatStreams $ x
-        lift $ downloadVideo ("Music/" <> title x <> ".mp4") $ url . last . formatStreams $ x
+        lift $ print $ type_ <$> viaNonEmpty last (formatStreams x)
+        lift $ print $ encoding <$> viaNonEmpty last (formatStreams x)
+        lift $ print $ url <$> viaNonEmpty last (formatStreams x)
+        case lift <$> downloadVideo ("Music/" <> title x <> ".mp4") <$> url <$> viaNonEmpty last (formatStreams x) of
+            Nothing -> ExceptT $ return $ Left NoVideosError
+            Just x -> x
         return Nothing
     mempty
 --main :: IO ()
