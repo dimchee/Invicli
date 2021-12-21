@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeOperators, FlexibleContexts, FlexibleInstances, ScopedTypeVariables, TypeApplications, OverloadedStrings #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 module Src.Data where
 
 import GHC.Generics
@@ -9,8 +11,15 @@ import Data.Data (Proxy(..))
 import Control.Monad
 import Data.List.NonEmpty
 import qualified Data.Vector as V
+import Data.String (IsString)
 
-type VidId = String
+type VideoId = String
+type PlaylistId = String
+
+fieldModifier :: (Eq p, IsString p) => p -> p
+fieldModifier x = case x of
+    "type_" -> "type"
+    _     -> x
 
 -- https://docs.invidious.io/API.md
 data Video = Video {
@@ -59,26 +68,57 @@ data FormatStream = FormatStream {
     size :: String
 } deriving (Show, Eq, Generic)
 instance FromJSON FormatStream where
-    parseJSON = genericParseJSON $ defaultOptions
-        { fieldLabelModifier = \x -> case x of
-            "type_" -> "type"
-            _     -> x
-        }
-class Fields f where
-  repGetFields :: Proxy (f p) -> [String]
+    parseJSON = genericParseJSON $ defaultOptions { fieldLabelModifier = fieldModifier }
 
-getFields :: forall a. (Generic a, Fields (Rep a)) => Proxy a -> [String]
-getFields _ = repGetFields @(Rep a) Proxy
+data Playlist = Playlist {
+ --title :: String,
+ playlistId :: String,
+ author :: String,
+ authorId :: String,
+ description :: String,
+ descriptionHtml :: String,
+ videos :: NonEmpty PVideo
+} deriving (Show, Eq, Generic)
+instance FromJSON Playlist
 
-instance Fields V1 where repGetFields _ = []
-instance Fields U1 where repGetFields _ = []
-instance Fields (K1 i c) where repGetFields _ = []
-instance (Fields f) => Fields (M1 D c f) where
-  repGetFields _ = repGetFields @f Proxy
-instance (Fields f) => Fields (M1 C c f) where
-  repGetFields _ = repGetFields @f Proxy
-instance (Fields f, Selector c) => Fields (M1 S c f) where
-  repGetFields _ = [selName (undefined :: t c f a)]
-instance (Fields a, Fields b) => Fields (a :*: b) where
-  repGetFields _ = repGetFields @a Proxy <> repGetFields @b Proxy
+newtype PVideo = PVideo {
+    videoId :: String
+} deriving (Show, Eq, Generic)
+instance FromJSON PVideo
 
+data SearchResult = SearchResult {
+    videoId :: Maybe VideoId,
+    playlistId :: Maybe PlaylistId
+} deriving (Show, Eq, Generic)
+instance FromJSON SearchResult
+
+
+class FieldsApi f where
+  repGetFieldsApi :: Proxy (f p) -> String
+
+getFieldsApi :: forall a. (Generic a, FieldsApi (Rep a)) => Proxy a -> String
+getFieldsApi _ = repGetFieldsApi @(Rep a) Proxy
+
+instance FieldsApi V1 where repGetFieldsApi _ = ""
+instance FieldsApi U1 where repGetFieldsApi _ = ""
+instance {-# OVERLAPPABLE #-}(Generic c, FieldsApi (Rep c)) => FieldsApi (Rec0 c) where
+    repGetFieldsApi _ = getFieldsApi @c Proxy
+instance (FieldsApi f) => FieldsApi (M1 D c f) where
+    repGetFieldsApi _ = repGetFieldsApi @f Proxy
+instance (FieldsApi f) => FieldsApi (M1 C c f) where
+    repGetFieldsApi _ = repGetFieldsApi @f Proxy
+instance (FieldsApi f, Selector c) => FieldsApi (M1 S c f) where
+    repGetFieldsApi _ = fieldModifier $ selName (undefined :: t c f a) <> getOthers (repGetFieldsApi @f Proxy)
+        where getOthers s = if s == "" then "" else "(" <> s <> ")"
+
+instance (FieldsApi a, FieldsApi b) => FieldsApi (a :*: b) where
+    repGetFieldsApi _ = repGetFieldsApi @a Proxy <> "," <> repGetFieldsApi @b Proxy
+
+instance {-# OVERLAPPING #-}FieldsApi (Rec0 String) where
+    repGetFieldsApi _ = ""
+instance {-# OVERLAPPING #-}FieldsApi (Rec0 (Maybe a)) where
+    repGetFieldsApi _ = ""
+instance {-# OVERLAPPING #-}(FieldsApi (Rep a), Generic a) => FieldsApi (Rec0 (NonEmpty a)) where
+    repGetFieldsApi _ = getFieldsApi @a Proxy
+instance {-# OVERLAPPING #-}(FieldsApi (Rep a), Generic a) => FieldsApi (Rec0 [a]) where
+    repGetFieldsApi _ = getFieldsApi @a Proxy
