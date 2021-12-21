@@ -6,15 +6,17 @@ module Src.Data where
 import GHC.Generics
 import Data.Aeson
 import Data.Data (Proxy(..))
-import Data.Containers (IsMap(omapKeysWith))
 import Control.Monad
+import Data.List.NonEmpty
 import qualified Data.Vector as V
+
+type VidId = String
 
 -- https://docs.invidious.io/API.md
 data Video = Video {
     title :: String,
     description :: String,
-    formatStreams :: [FormatStream]
+    formatStreams :: NonEmpty FormatStream
 } deriving (Show, Eq, Generic)
 instance FromJSON Video
 
