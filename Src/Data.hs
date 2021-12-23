@@ -3,15 +3,26 @@
 {-# LANGUAGE TypeOperators, FlexibleContexts, FlexibleInstances, ScopedTypeVariables, TypeApplications, OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-module Src.Data where
+{-# LANGUAGE DeriveAnyClass #-}
+
+
+module Src.Data (
+    module Src.Data,
+    module GHC.Generics,
+    module Data.Generics.Product,
+    module Data.Aeson,
+    module Data.Proxy,
+    module Data.List.NonEmpty,
+) where
 
 import GHC.Generics
+import Data.Generics.Product
 import Data.Aeson
-import Data.Data (Proxy(..))
-import Control.Monad
+import Data.Proxy
 import Data.List.NonEmpty
 import qualified Data.Vector as V
 import Data.String (IsString)
+import Control.Lens
 
 type VideoId = String
 type PlaylistId = String
@@ -26,8 +37,7 @@ data Video = Video {
     title :: String,
     description :: String,
     formatStreams :: NonEmpty FormatStream
-} deriving (Show, Eq, Generic)
-instance FromJSON Video
+} deriving (Show, Eq, Generic, FromJSON)
 
 -- https://api.invidious.io/instances
 data Instance = Instance {
@@ -41,8 +51,8 @@ instance FromJSON Instance where
             x <- parseJSON $ v V.! 0
             y <- parseJSON $ v V.! 1
             return $ Instance x y
-        | otherwise = mzero
-    parseJSON _ = mzero
+        | otherwise = fail "Vector of length different than 2"
+    parseJSON _ = fail "Not even Vector"
 
 data InstanceInfo = InstanceInfo {
     region :: Maybe String,
@@ -71,26 +81,33 @@ instance FromJSON FormatStream where
     parseJSON = genericParseJSON $ defaultOptions { fieldLabelModifier = fieldModifier }
 
 data Playlist = Playlist {
- --title :: String,
- playlistId :: String,
- author :: String,
- authorId :: String,
- description :: String,
- descriptionHtml :: String,
- videos :: NonEmpty PVideo
-} deriving (Show, Eq, Generic)
-instance FromJSON Playlist
+    title :: String,
+    playlistId :: String,
+    author :: String,
+    authorId :: String,
+    description :: String,
+    descriptionHtml :: String,
+    videos :: NonEmpty PVideo
+} deriving (Show, Eq, Generic, FromJSON)
 
 newtype PVideo = PVideo {
     videoId :: String
-} deriving (Show, Eq, Generic)
-instance FromJSON PVideo
+} deriving (Show, Eq, Generic, FromJSON)
+examplePVideo = PVideo { videoId = "test" }
+-- $setup
+--
+-- >>> :set -XTypeApplications
+-- >>> :set -XDataKinds
+-- >>> :set -XFlexibleContexts
+
+
+-- >>> examplePVideo ^. (field @"videoId")
+-- "test"
 
 data SearchResult = SearchResult {
     videoId :: Maybe VideoId,
     playlistId :: Maybe PlaylistId
-} deriving (Show, Eq, Generic)
-instance FromJSON SearchResult
+} deriving (Show, Eq, Generic, FromJSON)
 
 
 class FieldsApi f where
