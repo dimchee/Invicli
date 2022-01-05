@@ -42,7 +42,13 @@ report x = do
     e <- runExceptT x
     case e of
         Left err -> print err
-        Right _ -> return ()
+        Right x -> return ()
+tryIO:: (Show e, Monoid a) => ExceptT e IO a -> IO a
+tryIO x = do
+    e <- runExceptT x
+    case e of
+        Left err -> print err >>= return mempty
+        Right x -> return x
 
 viaNonEmpty :: (NonEmpty a -> b) -> [a] -> Maybe b 
 viaNonEmpty f [] = Nothing

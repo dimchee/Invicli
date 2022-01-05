@@ -105,9 +105,13 @@ examplePVideo = PVideo { videoId = "test" }
 -- "test"
 
 data SearchResult = SearchResult {
-    videoId :: Maybe VideoId,
-    playlistId :: Maybe PlaylistId
+    title :: String,
+    videoId :: VideoId
 } deriving (Show, Eq, Generic, FromJSON)
+-- data SearchResult = SearchResult {
+--     videoId :: Maybe VideoId,
+--     playlistId :: Maybe PlaylistId
+-- } deriving (Show, Eq, Generic, FromJSON)
 
 
 class FieldsApi f where
