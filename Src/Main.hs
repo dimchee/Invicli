@@ -30,9 +30,7 @@ getInstances = do
     failWith NoInstancesError $ nonEmpty l
 
 getSearchResults :: String -> Instance -> ExceptT InvidError IO [SearchResult]
-getSearchResults query inst = do
-    lift $ print $ uri (info inst) <> "/api/v1/search/?q=" <> query <> "?fields=" <> getFieldsApi @SearchResult Proxy
-    getJSON $ uri (info inst) <> "/api/v1/search/?q=" <> query <> "?fields=" <> getFieldsApi @SearchResult Proxy
+getSearchResults query inst = getJSON $ uri (info inst) <> "/api/v1/search/?q=" <> query <> "&fields=" <> getFieldsApi @SearchResult Proxy
 
 getSearchResultsI :: String -> NonEmpty Instance -> ExceptT InvidError IO (Instance, [SearchResult])
 getSearchResultsI query = foldS . map (\inst -> (inst,) <$> getSearchResults query inst)
