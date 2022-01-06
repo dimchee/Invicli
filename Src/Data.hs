@@ -20,6 +20,7 @@ import Data.Generics.Product
 import Data.Aeson
 import Data.Proxy
 import Data.List.NonEmpty
+import Data.List (intercalate)
 import qualified Data.Vector as V
 import Data.String (IsString)
 import Control.Lens
@@ -93,18 +94,8 @@ data Playlist = Playlist {
 newtype PVideo = PVideo {
     videoId :: String
 } deriving (Show, Eq, Generic, FromJSON)
-examplePVideo = PVideo { videoId = "test" }
--- $setup
---
--- >>> :set -XTypeApplications
--- >>> :set -XDataKinds
--- >>> :set -XFlexibleContexts
 
-
--- >>> examplePVideo ^. (field @"videoId")
--- "test"
-
-data SearchResult = SearchResult {
+data VideoSearchResult = VideoSearchResult {
     title :: String,
     videoId :: VideoId
 } deriving (Show, Eq, Generic, FromJSON)
@@ -112,6 +103,12 @@ data SearchResult = SearchResult {
 --     videoId :: Maybe VideoId,
 --     playlistId :: Maybe PlaylistId
 -- } deriving (Show, Eq, Generic, FromJSON)
+
+type Parameter = (String, String)
+
+fromApi :: Instance -> String -> [Parameter] -> String
+fromApi inst what params = uri (info inst) <> "/api/v1/" <> what <> "/?" <>
+    intercalate "&" [ x <> "=" <> y | (x, y) <- params]
 
 
 class FieldsApi f where

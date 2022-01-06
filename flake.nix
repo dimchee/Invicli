@@ -16,6 +16,8 @@
           generic-lens
           aeson
           http-conduit
+          optparse-generic
+          turtle
         ])) ];
       };
   };

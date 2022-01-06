@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, OverloadedStrings, TupleSections #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric     #-}
 
 module Main where
 
@@ -8,49 +9,63 @@ import qualified Prelude
 import Prelude hiding (last, head, map)
 import Control.Monad.Except
 import Data.List.NonEmpty
-import Data.Conduit.Process
+import Data.Conduit.Process (readProcess)
 
 import Src.Data
 import Src.Net
 import Src.Utils
 import Control.Lens
 
-getVideo :: VideoId -> Instance -> ExceptT InvidError IO Video
-getVideo id inst = getJSON $ uri (info inst) <> "/api/v1/videos/" <> id <> "?fields=" <> getFieldsApi @Video Proxy
+import Options.Generic
+import Turtle
+import Data.List (intercalate)
+import Data.Text (pack)
 
-getVideoI :: VideoId -> NonEmpty Instance -> ExceptT InvidError IO (Instance, Video)
-getVideoI vidId = foldS . map (\inst -> (inst,) <$> getVideo vidId inst)
+data Args = Search String
+          | Download VideoId
+          deriving (Generic, Show)
+
+instance ParseRecord Args
+
+getVideo :: VideoId -> Instance -> ExceptT InvidError IO Video
+getVideo id inst = getJSON $
+    fromApi inst ("videos/" <> id) [("fields", getFieldsApi @Video Proxy)]
 
 getPlaylist :: PlaylistId -> Instance -> ExceptT InvidError IO Playlist
-getPlaylist id inst = getJSON $ uri (info inst) <> "/api/v1/playlists/" <> id <> "?fields=" <> getFieldsApi @Playlist Proxy
+getPlaylist id inst = getJSON $
+    fromApi inst ("playlists/" <> id) [("fields", getFieldsApi @Playlist Proxy)]
 
 getInstances :: ExceptT InvidError IO (NonEmpty Instance)
 getInstances = do
     l <- getJSON "https://api.invidious.io/instances.json?sort_by=health"
     failWith NoInstancesError $ nonEmpty l
 
-getSearchResults :: String -> Instance -> ExceptT InvidError IO [SearchResult]
-getSearchResults query inst = getJSON $ uri (info inst) <> "/api/v1/search/?q=" <> query <> "&fields=" <> getFieldsApi @SearchResult Proxy
 
-getSearchResultsI :: String -> NonEmpty Instance -> ExceptT InvidError IO (Instance, [SearchResult])
-getSearchResultsI query = foldS . map (\inst -> (inst,) <$> getSearchResults query inst)
+testInstance :: IO Instance
+testInstance = do
+    x <- runExceptT $ head <$> getInstances
+    case x of
+        Right x -> return x
+        Left _ -> error "No instances available"
+
+getVideoSearchResults :: String -> Instance -> ExceptT InvidError IO [VideoSearchResult]
+getVideoSearchResults query inst = getJSON $
+    fromApi inst "search" [("q", query), ("fields", getFieldsApi @VideoSearchResult Proxy), ("type", "video")]
+
+(?>>) :: (Instance -> ExceptT InvidError IO a) -> NonEmpty Instance -> ExceptT InvidError IO (Instance, a)
+(?>>) getter = foldS . map (\inst -> (inst,) <$> getter inst)
+
 
 search :: String -> IO [VideoId]
 search query = tryIO $ do
     insts <- getInstances
-    (inst, results) <- getSearchResultsI query insts
+    (inst, results) <- getVideoSearchResults query ?>> insts
     return [vid | vid <- (^. field @"videoId") <$> results]
-
-    -- (inst, x) <- getVideoI "bKxccejvdtU" insts
-    -- lift $ print $ type_ $ last $ formatStreams x
-    -- lift $ print $ encoding $ last $ formatStreams x
-    -- lift $ print $ url $ last $ formatStreams x
-    -- lift $ downloadChunked ("Music/" <> x ^. (field @"title") <> ".mp4") $ url $ last $ formatStreams x
 
 searchAndPlay :: String -> IO ()
 searchAndPlay query = report $ do
     insts <- getInstances
-    (inst, results) <- getSearchResultsI query insts
+    (inst, results) <- getVideoSearchResults query ?>> insts
     lift $ print results
     resVids <- failWith NoVideosError $ nonEmpty
         [vid | vid <- (^. field @"videoId") <$> results]
@@ -62,15 +77,23 @@ searchAndPlay query = report $ do
 openMpv :: Url -> IO ()
 openMpv x = void $ readProcess "mpv" [x] ""
 
+choose :: MonadIO io => [String] -> io ExitCode
+choose l = shell "fzf" $ foldl1 (<|>) (return <$> textToLines (pack $ unlines l))
+-- https://github.com/junegunn/fzf/issues/1660
 
 main :: IO ()
-main = report $ do
-    insts <- getInstances
-    (inst, x) <- getVideoI "bKxccejvdtU" insts
-    lift $ print $ type_ $ last $ formatStreams x
-    lift $ print $ encoding $ last $ formatStreams x
-    lift $ print $ url $ last $ formatStreams x
-    lift $ downloadChunked ("Music/" <> x ^. (field @"title") <> ".mp4") $ url $ last $ formatStreams x
+main = do
+    args <- getRecord "Invidious search cli"
+    case (args :: Args) of
+        Search q -> searchAndPlay q
+        _ -> error "Not implemented yet"
+-- main = report $ do
+--     insts <- getInstances
+--     (inst, x) <- getVideo "bKxccejvdtU" ?>> insts
+--     lift $ print $ type_ $ last $ formatStreams x
+--     lift $ print $ encoding $ last $ formatStreams x
+--     lift $ print $ url $ last $ formatStreams x
+--     lift $ downloadChunked ("Music/" <> x ^. (field @"title") <> ".mp4") $ url $ last $ formatStreams x
 
 -- replicate this: 
 -- youtube-dl --audio-quality 0 -i --extract-audio --audio-format mp3 -o './%(title)s.%(ext)s' --add-metadata --embed-thumbnail --metadata-from-title "%(artist)s - %(title)s" YOUTUBE_LINKS
