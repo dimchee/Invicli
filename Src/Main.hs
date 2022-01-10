@@ -2,6 +2,8 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Main where
 
@@ -14,18 +16,20 @@ import Data.Conduit.Process (readProcess)
 import Src.Data
 import Src.Net
 import Src.Utils
-import Control.Lens
+import Control.Lens ((^.))
 
 import Options.Generic
 import Turtle
 import Data.List (intercalate)
 import Data.Text (pack)
 
-data Args = Search String
-          | Download VideoId
-          deriving (Generic, Show)
+data Args w = Search (w ::: String  <?> "Search for a video, and return list of results <videoId, title>")
+          | Download (w ::: VideoId <?> "Download a videoId") (w ::: String <?> "to directory")
+          | Play     (w ::: VideoId <?> "Play a videoId using mpv")
+          deriving Generic
 
-instance ParseRecord Args
+instance ParseRecord (Args Wrapped)
+deriving instance Show (Args Unwrapped)
 
 getVideo :: VideoId -> Instance -> ExceptT InvidError IO Video
 getVideo id inst = getJSON $
@@ -56,11 +60,11 @@ getVideoSearchResults query inst = getJSON $
 (?>>) getter = foldS . map (\inst -> (inst,) <$> getter inst)
 
 
-search :: String -> IO [VideoId]
+search :: String -> IO [(VideoId, String)]
 search query = tryIO $ do
     insts <- getInstances
     (inst, results) <- getVideoSearchResults query ?>> insts
-    return [vid | vid <- (^. field @"videoId") <$> results]
+    return [vid | vid <- (\v -> (v ^. field @"videoId", v ^. field @"title")) <$> results]
 
 searchAndPlay :: String -> IO ()
 searchAndPlay query = report $ do
@@ -81,19 +85,25 @@ choose :: MonadIO io => [String] -> io ExitCode
 choose l = shell "fzf" $ foldl1 (<|>) (return <$> textToLines (pack $ unlines l))
 -- https://github.com/junegunn/fzf/issues/1660
 
+bestQuality = url . last . formatStreams 
+
 main :: IO ()
-main = do
-    args <- getRecord "Invidious search cli"
-    case (args :: Args) of
-        Search q -> searchAndPlay q
+main = tryIO $ do
+    args <- lift $ unwrapRecord "Invidious search cli"
+    insts <- getInstances
+    case (args :: Args Unwrapped) of
+        Search q -> do
+            (_, results) <- getVideoSearchResults q ?>> insts
+            lift $ putStrLn $ unlines $ do
+                res <- results
+                return $ res ^. field @"videoId" <> " " <> res ^. field @"title"
+        Download vidId path -> do
+            (_, vid) <- getVideo vidId ?>> insts
+            lift $ downloadChunked (path <> "/" <> vid ^. (field @"title") <> ".mp4") $ bestQuality $ vid
+        Play vidId -> do
+            (_, vid) <- getVideo vidId ?>> insts
+            lift $ openMpv $ bestQuality $ vid
         _ -> error "Not implemented yet"
--- main = report $ do
---     insts <- getInstances
---     (inst, x) <- getVideo "bKxccejvdtU" ?>> insts
---     lift $ print $ type_ $ last $ formatStreams x
---     lift $ print $ encoding $ last $ formatStreams x
---     lift $ print $ url $ last $ formatStreams x
---     lift $ downloadChunked ("Music/" <> x ^. (field @"title") <> ".mp4") $ url $ last $ formatStreams x
 
 -- replicate this: 
 -- youtube-dl --audio-quality 0 -i --extract-audio --audio-format mp3 -o './%(title)s.%(ext)s' --add-metadata --embed-thumbnail --metadata-from-title "%(artist)s - %(title)s" YOUTUBE_LINKS
