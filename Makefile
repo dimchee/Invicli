@@ -5,4 +5,7 @@ app: Src/*
 run: app
 	./app
 
+test: app
+	./app search "test" | fzf | awk '{print $$1}' | xargs -I {} ./app play "{}"
+
 .PHONY: run

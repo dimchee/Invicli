@@ -44,7 +44,7 @@ data Video = Video {
 data Instance = Instance {
     name :: String,
     info :: InstanceInfo
-} deriving (Show, Eq)
+} deriving (Show, Eq, Generic)
 
 instance FromJSON Instance where
     parseJSON (Array v)
@@ -57,15 +57,17 @@ instance FromJSON Instance where
 
 data InstanceInfo = InstanceInfo {
     region :: Maybe String,
-    uri :: String
-} deriving (Show, Eq)
+    uri :: String,
+    type_ :: String
+} deriving (Show, Eq, Generic)
 
 -- Need just there fields
 instance FromJSON InstanceInfo where
     parseJSON = withObject "InstanceInfo" $ \o -> do
     reg <- o .: "region"
     uri <- o .: "uri"
-    return $ InstanceInfo reg uri
+    type_ <- o .: "type"
+    return $ InstanceInfo reg uri type_
 
 data FormatStream = FormatStream {
     url :: String,

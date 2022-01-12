@@ -8,7 +8,7 @@
 module Main where
 
 import qualified Prelude
-import Prelude hiding (last, head, map)
+import Prelude hiding (last, head, map, filter)
 import Control.Monad.Except
 import Data.List.NonEmpty
 import Data.Conduit.Process (readProcess)
@@ -22,9 +22,10 @@ import Options.Generic
 import Turtle
 import Data.List (intercalate)
 import Data.Text (pack)
+import System.IO.Temp (withTempDirectory)
 
 data Args w = Search (w ::: String  <?> "Search for a video, and return list of results <videoId, title>")
-          | Download (w ::: VideoId <?> "Download a videoId") (w ::: String <?> "to directory")
+          | Download (w ::: VideoId <?> "Download a videoId") (w ::: Maybe String <?> "to directory")
           | Play     (w ::: VideoId <?> "Play a videoId using mpv")
           deriving Generic
 
@@ -42,7 +43,9 @@ getPlaylist id inst = getJSON $
 getInstances :: ExceptT InvidError IO (NonEmpty Instance)
 getInstances = do
     l <- getJSON "https://api.invidious.io/instances.json?sort_by=health"
-    failWith NoInstancesError $ nonEmpty l
+    failWith NoInstancesError $ nonEmpty $
+        Prelude.filter ( (/= "invidious-us.kavin.rocks") . (^. field @"name")) $ -- strange stuff happens on this instance
+        Prelude.filter ( (== "https") . (^. field @"info" . field @"type_")) l 
 
 
 testInstance :: IO Instance
@@ -66,23 +69,11 @@ search query = tryIO $ do
     (inst, results) <- getVideoSearchResults query ?>> insts
     return [vid | vid <- (\v -> (v ^. field @"videoId", v ^. field @"title")) <$> results]
 
-searchAndPlay :: String -> IO ()
-searchAndPlay query = report $ do
-    insts <- getInstances
-    (inst, results) <- getVideoSearchResults query ?>> insts
-    lift $ print results
-    resVids <- failWith NoVideosError $ nonEmpty
-        [vid | vid <- (^. field @"videoId") <$> results]
-    vid <- getVideo (head resVids) inst
-    lift $ print $ url $ last $ formatStreams vid
-    lift $ print (vid ^. field @"title")
-    lift $ openMpv $ url $ last $ formatStreams vid
-
-openMpv :: Url -> IO ()
-openMpv x = void $ readProcess "mpv" [x] ""
+openMpv :: MonadIO io => Url -> io ExitCode
+openMpv x = shell ("mpv '" <> pack x <> "'") empty
 
 choose :: MonadIO io => [String] -> io ExitCode
-choose l = shell "fzf" $ foldl1 (<|>) (return <$> textToLines (pack $ unlines l))
+choose l = shell "fzf " $ foldl1 (<|>) (return <$> textToLines (pack $ unlines l))
 -- https://github.com/junegunn/fzf/issues/1660
 
 bestQuality = url . last . formatStreams 
@@ -99,11 +90,15 @@ main = tryIO $ do
                 return $ res ^. field @"videoId" <> " " <> res ^. field @"title"
         Download vidId path -> do
             (_, vid) <- getVideo vidId ?>> insts
-            lift $ downloadChunked (path <> "/" <> vid ^. (field @"title") <> ".mp4") $ bestQuality $ vid
+            lift $ downloadChunked (maybe "." id path <> "/" <> vid ^. (field @"title") <> ".mp4") $ bestQuality vid
         Play vidId -> do
             (_, vid) <- getVideo vidId ?>> insts
-            lift $ openMpv $ bestQuality $ vid
-        _ -> error "Not implemented yet"
+            lift $ withTempDirectory "/tmp" "invidious_cli" $ \path -> do
+                let vidFile = path <> "/" <> vid ^. (field @"title") <> ".mp4"
+                downloadChunked vidFile $ bestQuality vid
+                exitCode <- openMpv vidFile
+                putStrLn $ show exitCode
 
 -- replicate this: 
 -- youtube-dl --audio-quality 0 -i --extract-audio --audio-format mp3 -o './%(title)s.%(ext)s' --add-metadata --embed-thumbnail --metadata-from-title "%(artist)s - %(title)s" YOUTUBE_LINKS
+-- Not Working puaacfjEH_U 
