@@ -1,11 +1,11 @@
 # Maybe use -fllvm for faster code?
-app: Src/*
-	ghc -hidir .Build -odir .Build Src/*.hs -o app 
+invicli: Src/*
+	ghc -hidir .Build -odir .Build Src/*.hs -o invicli 
 
-run: app
-	./app
+run: invicli
+	./invicli
 
-test: app
-	./app search "test" | fzf | awk '{print $$1}' | xargs -I {} ./app play "{}"
+test: invicli
+	./invicli search "test" | fzf | awk '{print $$1}' | xargs -I {} ./invicli play "{}"
 
 .PHONY: run
