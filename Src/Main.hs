@@ -23,17 +23,26 @@ import Turtle
 import Data.List (intercalate)
 import Data.Text (pack)
 import System.IO.Temp (withTempDirectory)
+import Data.Maybe (fromMaybe)
 
 data Args w = Search (w ::: String  <?> "Search for a video, and return list of results <videoId, title>")
-          | Download (w ::: VideoId <?> "Download a videoId") (w ::: Maybe String <?> "to directory")
-          | Play     (w ::: VideoId <?> "Play a videoId using mpv")
+          | Download (w ::: Maybe String <?> "Download to directory")
+          | Play
+          | GetLink
           deriving Generic
 
 instance ParseRecord (Args Wrapped)
 deriving instance Show (Args Unwrapped)
 
+onError :: String -> ExceptT e IO a -> ExceptT e IO a
+onError message x = ExceptT $ do
+    e <- runExceptT x
+    case e of
+        Left _  -> print message >> return e
+        Right _ -> return e
+
 getVideo :: VideoId -> Instance -> ExceptT InvidError IO Video
-getVideo id inst = getJSON $
+getVideo id inst = onError ("can't get video from: " <> (inst ^. field @"name")) $ getJSON $
     fromApi inst ("videos/" <> id) [("fields", getFieldsApi @Video Proxy)]
 
 getPlaylist :: PlaylistId -> Instance -> ExceptT InvidError IO Playlist
@@ -45,7 +54,7 @@ getInstances = do
     l <- getJSON "https://api.invidious.io/instances.json?sort_by=health"
     failWith NoInstancesError $ nonEmpty $
         Prelude.filter ( (/= "invidious-us.kavin.rocks") . (^. field @"name")) $ -- strange stuff happens on this instance
-        Prelude.filter ( (== "https") . (^. field @"info" . field @"type_")) l 
+        Prelude.filter ( (== "https") . (^. field @"info" . field @"type_")) l
 
 
 testInstance :: IO Instance
@@ -72,11 +81,13 @@ search query = tryIO $ do
 openMpv :: MonadIO io => Url -> io ExitCode
 openMpv x = shell ("mpv '" <> pack x <> "'") empty
 
-choose :: MonadIO io => [String] -> io ExitCode
-choose l = shell "fzf " $ foldl1 (<|>) (return <$> textToLines (pack $ unlines l))
--- https://github.com/junegunn/fzf/issues/1660
+bestQuality = url . last . formatStreams
 
-bestQuality = url . last . formatStreams 
+getVideoId :: ExceptT InvidError IO VideoId
+getVideoId = do
+    list <- words <$> lift getLine
+    vidId <- failWith (BadVideoId "") $ head <$> nonEmpty list
+    failWith (BadVideoId vidId) $ if 11 == Prelude.length vidId then Just vidId else Nothing
 
 main :: IO ()
 main = tryIO $ do
@@ -88,16 +99,23 @@ main = tryIO $ do
             lift $ putStrLn $ unlines $ do
                 res <- results
                 return $ res ^. field @"videoId" <> " " <> res ^. field @"title"
-        Download vidId path -> do
+        Download path -> do
+            vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
-            lift $ downloadChunked (maybe "." id path <> "/" <> vid ^. (field @"title") <> ".mp4") $ bestQuality vid
-        Play vidId -> do
+            lift $ downloadChunked (fromMaybe "." path <> "/" <> vid ^. (field @"title") <> ".mp4") $ bestQuality vid
+        Play -> do
+            vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
             lift $ withTempDirectory "/tmp" "invidious_cli" $ \path -> do
                 let vidFile = path <> "/" <> vid ^. (field @"title") <> ".mp4"
                 downloadChunked vidFile $ bestQuality vid
                 exitCode <- openMpv vidFile
-                putStrLn $ show exitCode
+                print exitCode
+        GetLink -> do
+            vidId <- getVideoId
+            (_, vid) <- getVideo vidId ?>> insts
+            lift $ putStrLn $ bestQuality vid
+
 
 -- replicate this: 
 -- youtube-dl --audio-quality 0 -i --extract-audio --audio-format mp3 -o './%(title)s.%(ext)s' --add-metadata --embed-thumbnail --metadata-from-title "%(artist)s - %(title)s" YOUTUBE_LINKS

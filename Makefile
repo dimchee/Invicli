@@ -6,6 +6,6 @@ run: invicli
 	./invicli
 
 test: invicli
-	./invicli search "test" | fzf | awk '{print $$1}' | xargs -I {} ./invicli play "{}"
+	./invicli search "test" | fzf | ./invicli play
 
 .PHONY: run

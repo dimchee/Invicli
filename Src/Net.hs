@@ -13,6 +13,7 @@ import Data.Conduit.Binary (sinkFile)
 data InvidError = NoServiceAvailableError
     | NoInstancesError
     | NoVideosError
+    | BadVideoId String
     | BadJsonParsingError JSONException
     deriving (Show)
 
