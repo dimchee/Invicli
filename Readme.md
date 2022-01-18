@@ -1,5 +1,9 @@
 # Simple invidious cli client
 
+## Install
+
+This repository contains nix flake, so you can install it as any other nix flake (google it)
+
 ## Usage:
 
 Next example uses mpv to play video:
