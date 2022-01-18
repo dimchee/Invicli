@@ -24,12 +24,16 @@ import Data.List (intercalate)
 import Data.Text (pack)
 import System.IO.Temp (withTempDirectory)
 import Data.Maybe (fromMaybe)
+import Data.List.Split
 
-data Args w = Search (w ::: String  <?> "Search for a video, and return list of results <videoId, title>")
-          | Download (w ::: Maybe String <?> "Download to directory")
-          | Play
-          | GetLink
-          deriving Generic
+data Args w = Search (w ::: String  <?> "Query to search for")
+            | Download {
+                dir  :: w ::: String <!> "." <?> "Directory to download to",
+                name :: w ::: String <!> "?title.mp4" <?> "Output name, with wildcards: ?title"
+            }
+            | Play
+            | GetLink
+            deriving Generic
 
 instance ParseRecord (Args Wrapped)
 deriving instance Show (Args Unwrapped)
@@ -89,6 +93,16 @@ getVideoId = do
     vidId <- failWith (BadVideoId "") $ head <$> nonEmpty list
     failWith (BadVideoId vidId) $ if 11 == Prelude.length vidId then Just vidId else Nothing
 
+
+type WildCard = String
+
+lexWildcard :: WildCard -> String -> [String]
+lexWildcard wc = split (dropInitBlank $ dropInnerBlanks $ dropFinalBlank $ onSublist wc)
+
+
+substWildcards :: Video -> String -> String
+substWildcards vid = concatMap (\x -> if x == "?title" then vid ^. field @"title" else x) . lexWildcard "?title"
+
 main :: IO ()
 main = tryIO $ do
     args <- lift $ unwrapRecord "Invidious search cli"
@@ -99,10 +113,10 @@ main = tryIO $ do
             lift $ putStrLn $ unlines $ do
                 res <- results
                 return $ res ^. field @"videoId" <> " " <> res ^. field @"title"
-        Download path -> do
+        Download dir name -> do
             vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
-            lift $ downloadChunked (fromMaybe "." path <> "/" <> vid ^. (field @"title") <> ".mp4") $ bestQuality vid
+            lift $ downloadChunked (dir <> "/" <> substWildcards vid name) $ bestQuality vid
         Play -> do
             vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
