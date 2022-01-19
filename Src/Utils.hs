@@ -10,17 +10,6 @@ import Control.Monad.Except
 import Data.List.NonEmpty
 import Data.Functor ((<&>))
 
-failWith :: Monad m => e -> Maybe a -> ExceptT e m a
-failWith err may = failWithE err $ ExceptT . return . Right <$> may
-
-failWithM :: Monad m => e -> Maybe (m a) -> ExceptT e m a
-failWithM err may = failWithE err $ (\mx -> ExceptT $ mx <&> Right) <$> may
-
-failWithE :: Monad m => e -> Maybe (ExceptT e m a) -> ExceptT e m a
-failWithE err may = case may of
-    Nothing -> ExceptT $ return $ Left err
-    Just ex -> ex
-
 instance Monad m => Semigroup (ExceptT err m a) where
     x <> y = ExceptT $ do
         x <- runExceptT x
@@ -32,9 +21,16 @@ instance Monad m => Semigroup (ExceptT err m a) where
                     Right x -> return $ Right x
                     Left err -> return $ Left err
 
+failWith :: Monad m => e -> Maybe a -> ExceptT e m a
+failWith err may = failWithE err $ ExceptT . return . Right <$> may
 
-foldS :: Semigroup a => NonEmpty a -> a
-foldS (x :| xs) = foldl (<>) x xs
+failWithM :: Monad m => e -> Maybe (m a) -> ExceptT e m a
+failWithM err may = failWithE err $ (\mx -> ExceptT $ mx <&> Right) <$> may
+
+failWithE :: Monad m => e -> Maybe (ExceptT e m a) -> ExceptT e m a
+failWithE err may = case may of
+    Nothing -> ExceptT $ return $ Left err
+    Just ex -> ex
 
 mapLeft :: (a -> c) -> Either a b -> Either c b
 mapLeft f (Left  x) = Left $ f x

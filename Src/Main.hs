@@ -25,13 +25,15 @@ import Data.Text (pack)
 import System.IO.Temp (withTempDirectory)
 import Data.Maybe (fromMaybe)
 import Data.List.Split
+import System.Environment
 
 data Args w = Search (w ::: String  <?> "Query to search for")
             | Download {
                 dir  :: w ::: String <!> "." <?> "Directory to download to",
-                name :: w ::: String <!> "?title.mp4" <?> "Output name, with wildcards: ?title"
+                o :: w ::: String <!> "?title.mp4" <?> "Output name, with wildcards: ?title"
             }
             | Play
+            | PlayTemp
             | GetLink
             deriving Generic
 
@@ -58,10 +60,17 @@ lexWildcard wc = split (dropInitBlank $ dropInnerBlanks $ dropFinalBlank $ onSub
 substWildcards :: Video -> String -> String
 substWildcards vid = concatMap (\x -> if x == "?title" then vid ^. field @"title" else x) . lexWildcard "?title"
 
+
+-- search :: String -> IO [(VideoId, String)]
+-- search query = tryIO $ do
+--     insts <- getInstances
+--     (inst, results) <- getVideoSearchResults query ?>> insts
+--     return [vid | vid <- (\v -> (v ^. field @"videoId", v ^. field @"title")) <$> results]
+
 main :: IO ()
 main = tryIO $ do
     args <- lift $ unwrapRecord "Invidious search cli"
-    insts <- getInstances
+    insts <- loadInstances
     case (args :: Args Unwrapped) of
         Search q -> do
             (_, results) <- getVideoSearchResults q ?>> insts
@@ -75,17 +84,26 @@ main = tryIO $ do
         Play -> do
             vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
+            exitCode <- openMpv $ bestQuality vid
+            lift $ if exitCode == ExitFailure 127 then
+                putStrLn $ "mpv not found, please install it so you can use invicli play!"
+            else putStrLn $ "Could not launch mpv, exit code: " <> show exitCode
+        PlayTemp -> do
+            vidId <- getVideoId
+            (_, vid) <- getVideo vidId ?>> insts
             lift $ withTempDirectory "/tmp" "invidious_cli" $ \path -> do
                 let vidFile = path <> "/" <> vid ^. (field @"title") <> ".mp4"
                 downloadChunked vidFile $ bestQuality vid
                 exitCode <- openMpv vidFile
-                print exitCode
+                if exitCode == ExitFailure 127 then
+                    putStrLn $ "mpv not found, please install it so you can use invicli play!"
+                else putStrLn $ "Could not launch mpv, exit code: " <> show exitCode
         GetLink -> do
             vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
             lift $ putStrLn $ bestQuality vid
 
-
+-- Should add (NonEmpty InstUrl) to state monad over ExceptT
 -- replicate this: 
 -- youtube-dl --audio-quality 0 -i --extract-audio --audio-format mp3 -o './%(title)s.%(ext)s' --add-metadata --embed-thumbnail --metadata-from-title "%(artist)s - %(title)s" YOUTUBE_LINKS
 -- Not Working puaacfjEH_U 

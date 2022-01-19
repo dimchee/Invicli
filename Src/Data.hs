@@ -28,6 +28,8 @@ import Control.Lens ((^.))
 
 type VideoId = String
 type PlaylistId = String
+type InstUrl = String
+-- type InstUrls = NonEmpty Url
 
 fieldModifier :: (Eq p, IsString p) => p -> p
 fieldModifier x = case x of
@@ -58,7 +60,7 @@ instance FromJSON Instance where
 
 data InstanceInfo = InstanceInfo {
     region :: Maybe String,
-    uri :: String,
+    uri :: InstUrl,
     type_ :: String
 } deriving (Show, Eq, Generic)
 
@@ -109,8 +111,8 @@ data VideoSearchResult = VideoSearchResult {
 
 type Parameter = (String, String)
 
-fromApi :: Instance -> String -> [Parameter] -> String
-fromApi inst what params = uri (info inst) <> "/api/v1/" <> what <> "/?" <>
+fromApi :: InstUrl -> String -> [Parameter] -> String
+fromApi instUrl what params = instUrl <> "/api/v1/" <> what <> "/?" <>
     intercalate "&" [ x <> "=" <> y | (x, y) <- params]
 
 
