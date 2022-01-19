@@ -8,10 +8,13 @@ import Prelude hiding (map, head)
 import Src.Data
 import Src.Net
 import Src.Utils
-import Data.List (delete, intercalate)
+import Data.Maybe (fromMaybe, fromJust)
 import System.Environment (lookupEnv, setEnv)
-import Data.Maybe (fromMaybe)
-import Data.List.Split (splitOn)
+import System.Directory
+import Control.Applicative
+import Data.Functor
+import Data.Time (getCurrentTime)
+import Data.Time.Clock
 
 
 getInstances :: ExceptT InvidError IO (NonEmpty Instance)
@@ -21,10 +24,13 @@ getInstances = do
         Prelude.filter ( (/= "invidious-us.kavin.rocks") . (^. field @"name")) $ -- strange stuff happens on this instance
         Prelude.filter ( (== "https") . (^. field @"info" . field @"type_")) l
 
+urlStandard :: Url -> Url
+urlStandard x = if Prelude.last x == '/' then Prelude.init x else x
+
 getInstUrls :: ExceptT InvidError IO (NonEmpty InstUrl)
 getInstUrls = do
     insts <- getInstances
-    return $ (^. field @"info" . field @"uri") <$> insts
+    return $ urlStandard . (^. field @"info" . field @"uri") <$> insts
 
 getVideo :: VideoId -> InstUrl -> ExceptT InvidError IO Video
 getVideo id inst = onError ("can't get video from: " <> inst) $ getJSON $
@@ -42,11 +48,44 @@ getVideoSearchResults query inst = getJSON $
 loadInstances :: ExceptT InvidError IO (NonEmpty InstUrl)
 loadInstances = do
     insts <- getInstUrls
-    envInsts <- lift $ lookupEnv "INVIDIOUS_INSTANCES"
-    return $ fromMaybe insts (envInsts >>= nonEmpty . splitOn ":")
+    envInsts <- lift $ readFromCache "instances"
+    return $ fromMaybe insts (envInsts >>= nonEmpty . lines)
 
 saveInstances :: NonEmpty InstUrl -> ExceptT InvidError IO ()
-saveInstances insts = lift $ setEnv "INVIDIOUS_INSTANCES" $ intercalate ":" $ toList insts
+saveInstances insts = do
+    file <- lift $ getCacheFile "instances"
+    lift $ maybe (const empty) writeFile file $ unlines $ toList insts
+
+
+readFromCache :: String -> IO (Maybe String)
+readFromCache name = do
+    path <- getCacheFile name
+    b <- maybe (return False) doesFileExist path
+    if b then do
+        lastUpdate <- getModificationTime $ fromJust path
+        curTime <- getCurrentTime
+        print $ diffUTCTime curTime lastUpdate
+        if diffUTCTime curTime lastUpdate > nominalDay then return Nothing
+        else Just <$> readFile (fromJust path)
+    else return Nothing
+
+-- Took from https://github.com/tldr-pages/tldr-python-client/blob/main/tldr.py#L81
+getCacheDir :: IO (Maybe FilePath)
+getCacheDir = do
+    dir <- lookupEnv "XDG_CACHE_HOME"
+        <||> (lookupEnv "HOME" <>.. "/.cache")
+        <||> (Just <$> canonicalizePath "~" <>. "/.cache")
+        <>.. "/invicli/"
+    maybe empty (createDirectoryIfMissing True) dir
+    return dir
+    where
+        a <>. b= (<> b) <$> a
+        a <>.. b= (<>. b) <$> a
+        a <||> b = do x <- a; y <- b; return $ x <|> y
+
+getCacheFile :: String -> IO (Maybe FilePath)
+getCacheFile name = getCacheDir <&> fmap (<> name)
+
 
 (?>>) :: (InstUrl -> ExceptT InvidError IO a) -> NonEmpty InstUrl -> ExceptT InvidError IO (NonEmpty InstUrl, a)
 (?>>) getter insts = do

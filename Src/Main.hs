@@ -86,7 +86,7 @@ main = tryIO $ do
             (_, vid) <- getVideo vidId ?>> insts
             exitCode <- openMpv $ bestQuality vid
             lift $ if exitCode == ExitFailure 127 then
-                putStrLn $ "mpv not found, please install it so you can use invicli play!"
+                putStrLn "mpv not found, please install it so you can use invicli play!"
             else putStrLn $ "Could not launch mpv, exit code: " <> show exitCode
         PlayTemp -> do
             vidId <- getVideoId
@@ -96,7 +96,7 @@ main = tryIO $ do
                 downloadChunked vidFile $ bestQuality vid
                 exitCode <- openMpv vidFile
                 if exitCode == ExitFailure 127 then
-                    putStrLn $ "mpv not found, please install it so you can use invicli play!"
+                    putStrLn "mpv not found, please install it so you can use invicli play!"
                 else putStrLn $ "Could not launch mpv, exit code: " <> show exitCode
         GetLink -> do
             vidId <- getVideoId
