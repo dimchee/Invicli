@@ -18,3 +18,7 @@ You can also download using invicli
 ```sh
 $ invicli search '3b1b' | wofi --dmenu | invicli download
 ```
+First first word of first line is used as videoId, so you can
+```sh
+$ invicli search 'something' | invicli play
+```

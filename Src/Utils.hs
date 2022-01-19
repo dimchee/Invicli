@@ -1,4 +1,7 @@
-module Src.Utils where
+module Src.Utils (
+    module Src.Utils,
+    module Control.Monad.Except
+) where
 
 import qualified Prelude
 import Prelude hiding (last, head)
@@ -50,6 +53,9 @@ tryIO x = do
         Left err -> print err >>= return mempty
         Right x -> return x
 
-viaNonEmpty :: (NonEmpty a -> b) -> [a] -> Maybe b 
-viaNonEmpty f [] = Nothing
-viaNonEmpty f (x:xs) = Just $ f $ x :| xs
+onError :: String -> ExceptT e IO a -> ExceptT e IO a
+onError message x = ExceptT $ do
+    e <- runExceptT x
+    case e of
+        Left _  -> print message >> return e
+        Right _ -> return e

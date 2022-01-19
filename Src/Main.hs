@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, FlexibleInstances, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, OverloadedStrings, TupleSections #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances, ScopedTypeVariables, TypeApplications, AllowAmbiguousTypes, OverloadedStrings #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric     #-}
@@ -16,7 +16,7 @@ import Data.Conduit.Process (readProcess)
 import Src.Data
 import Src.Net
 import Src.Utils
-import Control.Lens ((^.))
+import Src.Invid
 
 import Options.Generic
 import Turtle
@@ -38,50 +38,6 @@ data Args w = Search (w ::: String  <?> "Query to search for")
 instance ParseRecord (Args Wrapped)
 deriving instance Show (Args Unwrapped)
 
-onError :: String -> ExceptT e IO a -> ExceptT e IO a
-onError message x = ExceptT $ do
-    e <- runExceptT x
-    case e of
-        Left _  -> print message >> return e
-        Right _ -> return e
-
-getVideo :: VideoId -> Instance -> ExceptT InvidError IO Video
-getVideo id inst = onError ("can't get video from: " <> (inst ^. field @"name")) $ getJSON $
-    fromApi inst ("videos/" <> id) [("fields", getFieldsApi @Video Proxy)]
-
-getPlaylist :: PlaylistId -> Instance -> ExceptT InvidError IO Playlist
-getPlaylist id inst = getJSON $
-    fromApi inst ("playlists/" <> id) [("fields", getFieldsApi @Playlist Proxy)]
-
-getInstances :: ExceptT InvidError IO (NonEmpty Instance)
-getInstances = do
-    l <- getJSON "https://api.invidious.io/instances.json?sort_by=health"
-    failWith NoInstancesError $ nonEmpty $
-        Prelude.filter ( (/= "invidious-us.kavin.rocks") . (^. field @"name")) $ -- strange stuff happens on this instance
-        Prelude.filter ( (== "https") . (^. field @"info" . field @"type_")) l
-
-
-testInstance :: IO Instance
-testInstance = do
-    x <- runExceptT $ head <$> getInstances
-    case x of
-        Right x -> return x
-        Left _ -> error "No instances available"
-
-getVideoSearchResults :: String -> Instance -> ExceptT InvidError IO [VideoSearchResult]
-getVideoSearchResults query inst = getJSON $
-    fromApi inst "search" [("q", query), ("fields", getFieldsApi @VideoSearchResult Proxy), ("type", "video")]
-
-(?>>) :: (Instance -> ExceptT InvidError IO a) -> NonEmpty Instance -> ExceptT InvidError IO (Instance, a)
-(?>>) getter = foldS . map (\inst -> (inst,) <$> getter inst)
-
-
-search :: String -> IO [(VideoId, String)]
-search query = tryIO $ do
-    insts <- getInstances
-    (inst, results) <- getVideoSearchResults query ?>> insts
-    return [vid | vid <- (\v -> (v ^. field @"videoId", v ^. field @"title")) <$> results]
-
 openMpv :: MonadIO io => Url -> io ExitCode
 openMpv x = shell ("mpv '" <> pack x <> "'") empty
 
@@ -98,7 +54,6 @@ type WildCard = String
 
 lexWildcard :: WildCard -> String -> [String]
 lexWildcard wc = split (dropInitBlank $ dropInnerBlanks $ dropFinalBlank $ onSublist wc)
-
 
 substWildcards :: Video -> String -> String
 substWildcards vid = concatMap (\x -> if x == "?title" then vid ^. field @"title" else x) . lexWildcard "?title"

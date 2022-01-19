@@ -13,6 +13,7 @@ module Src.Data (
     module Data.Aeson,
     module Data.Proxy,
     module Data.List.NonEmpty,
+    module Control.Lens
 ) where
 
 import GHC.Generics
@@ -23,7 +24,7 @@ import Data.List.NonEmpty
 import Data.List (intercalate)
 import qualified Data.Vector as V
 import Data.String (IsString)
-import Control.Lens
+import Control.Lens ((^.))
 
 type VideoId = String
 type PlaylistId = String
