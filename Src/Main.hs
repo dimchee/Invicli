@@ -43,7 +43,9 @@ deriving instance Show (Args Unwrapped)
 openMpv :: MonadIO io => Url -> io ExitCode
 openMpv x = shell ("mpv '" <> pack x <> "'") empty
 
-bestQuality = url . last . formatStreams
+bestQuality :: Video -> ExceptT InvidError IO Url
+bestQuality vid = failWith (NoMp4VideoStreams $ vid ^. field @"videoId") $ url . last
+    <$> nonEmpty [x | x <- formatStreams vid, x ^. field @"container" == "mp4"]
 
 getVideoId :: ExceptT InvidError IO VideoId
 getVideoId = do
@@ -80,28 +82,30 @@ main = tryIO $ do
         Download dir name -> do
             vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
-            lift $ downloadChunked (dir <> "/" <> substWildcards vid name) $ bestQuality vid
+            bestQuality vid >>= \x -> lift $ downloadChunked (dir <> "/" <> substWildcards vid name) x
         Play -> do
             vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
-            exitCode <- openMpv $ bestQuality vid
+            lift $ putStrLn $ "Playing: " <> vid ^. field @"title"
+            exitCode <- openMpv =<< bestQuality vid
             lift $ if exitCode == ExitFailure 127 then
                 putStrLn "mpv not found, please install it so you can use invicli play!"
             else putStrLn $ "Could not launch mpv, exit code: " <> show exitCode
         PlayTemp -> do
             vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
-            lift $ withTempDirectory "/tmp" "invidious_cli" $ \path -> do
+            withTempDirectory "/tmp" "invidious_cli" $ \path -> do
                 let vidFile = path <> "/" <> vid ^. (field @"title") <> ".mp4"
-                downloadChunked vidFile $ bestQuality vid
+                bestQuality vid >>= \x -> lift $ downloadChunked vidFile x
                 exitCode <- openMpv vidFile
                 if exitCode == ExitFailure 127 then
-                    putStrLn "mpv not found, please install it so you can use invicli play!"
-                else putStrLn $ "Could not launch mpv, exit code: " <> show exitCode
+                    lift $ putStrLn "mpv not found, please install it so you can use invicli play!"
+                else lift $ putStrLn $ "Could not launch mpv, exit code: " <> show exitCode
         GetLink -> do
             vidId <- getVideoId
             (_, vid) <- getVideo vidId ?>> insts
-            lift $ putStrLn $ bestQuality vid
+            lift $ print vid
+            bestQuality vid >>= \x -> lift $ putStrLn x
 
 -- Should add (NonEmpty InstUrl) to state monad over ExceptT
 -- replicate this: 

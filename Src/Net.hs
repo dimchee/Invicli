@@ -10,11 +10,14 @@ import Network.HTTP.Types
 import Data.Conduit (runConduitRes, (.|))
 import Data.Conduit.Binary (sinkFile)
 
+import Src.Data (VideoId)
+
 data InvidError = NoServiceAvailableError
     | NoInstancesError
     | NoVideosError
     | BadVideoId String
     | BadJsonParsingError JSONException
+    | NoMp4VideoStreams VideoId
     deriving (Show)
 
 type Url = String

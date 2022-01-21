@@ -40,7 +40,8 @@ fieldModifier x = case x of
 data Video = Video {
     title :: String,
     description :: String,
-    formatStreams :: NonEmpty FormatStream
+    formatStreams :: [FormatStream],
+    videoId :: VideoId
 } deriving (Show, Eq, Generic, FromJSON)
 
 -- https://api.invidious.io/instances
@@ -97,7 +98,7 @@ data Playlist = Playlist {
 } deriving (Show, Eq, Generic, FromJSON)
 
 newtype PVideo = PVideo {
-    videoId :: String
+    videoId :: VideoId
 } deriving (Show, Eq, Generic, FromJSON)
 
 data VideoSearchResult = VideoSearchResult {

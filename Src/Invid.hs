@@ -54,8 +54,12 @@ loadInstances = do
 saveInstances :: NonEmpty InstUrl -> ExceptT InvidError IO ()
 saveInstances insts = do
     file <- lift $ getCacheFile "instances"
-    lift $ maybe (const empty) writeFile file $ unlines $ toList insts
-
+    b <- lift $ maybe (return False) doesFileExist file
+    if b then do
+        lastModTime <- lift $ getModificationTime $ fromJust file
+        lift $ maybe (const empty) writeFile file $ unlines $ toList insts
+        lift $ setModificationTime (fromJust file) lastModTime
+    else lift $ maybe (const empty) writeFile file $ unlines $ toList insts
 
 readFromCache :: String -> IO (Maybe String)
 readFromCache name = do
@@ -64,7 +68,7 @@ readFromCache name = do
     if b then do
         lastUpdate <- getModificationTime $ fromJust path
         curTime <- getCurrentTime
-        print $ diffUTCTime curTime lastUpdate
+        --print $ diffUTCTime curTime lastUpdate
         if diffUTCTime curTime lastUpdate > nominalDay then return Nothing
         else Just <$> readFile (fromJust path)
     else return Nothing
