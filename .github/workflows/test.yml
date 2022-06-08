@@ -6,15 +6,27 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2.4.0
+    # - uses: actions/checkout@v2.4.0
+    # - uses: cachix/install-nix-action@v15
+    #   with:
+    #     extra_nix_config: |
+    #       access-tokens = github.com=${{ secrets.github_token }}
+    # - run: nix build
+    # - name: Upload the artifacts
+    #   uses: skx/github-action-publish-binaries@master
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #   with:
+    #     args: 'invicli'
+    - uses: actions/checkout@v3
     - uses: cachix/install-nix-action@v15
       with:
         extra_nix_config: |
-          access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+          access-tokens = github.com=${{ secrets.github_token }}
     - run: nix build
-    - name: Upload the artifacts
-      uses: skx/github-action-publish-binaries@master
+    - name: Create a Release
+      uses: elgohr/Github-Release-Action@v4
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
       with:
-        args: 'invicli'
+        title: Invicli Release
