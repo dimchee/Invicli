@@ -99,6 +99,7 @@ getCacheFile name = getCacheDir <&> fmap (<> name)
     where
         tryInst inst = (inst,) <$> getter inst
         foldS (x :| xs) = foldl (<>) x xs
+        -- Use sequence (From traversable)
 
 
 testInstance :: IO Instance
